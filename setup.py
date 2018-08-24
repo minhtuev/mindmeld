@@ -16,20 +16,24 @@ requirements = [
     'Flask-Cors~=3.0',
     'future~=0.16.0',
     'nltk~=3.2',
-    'numpy>=1.14,<=1.14.5',  # tensorflow not working with latest version of numpy
+    # at one point tensorflow was not working numpy 1.15.0+
+    'numpy>=1.14,<=1.14.5; python_version < "3.7"',
+    'numpy~=1.15.0; python_version >= "3.7"',
     'pandas~=0.22',
     'pip>=9.0.1',
     'py~=1.4',
     'python-dateutil~=2.6',
-    'pytz>=2017.2',
+    'pytz>=2018.5',
     'requests~=2.13',
-    'scipy~=0.9',
-    'scikit-learn>=0.18.1,<0.20',
+    'scipy>=0.9,<2.0',
+    'scikit-learn>=0.18.1,<0.20; python_version < "3.7"',
+    'scikit-learn>=0.19.2,<0.20; python_version >= "3.7"',
     'tqdm~=4.15',
     'urllib3~=1.21.1',
-    'python-crfsuite~=0.9',
+    'python-crfsuite~=0.9; python_version < "3.7"',
+    'python-crfsuite>=0.9.6,<1.0; python_version >= "3.7"',
     'sklearn-crfsuite>=0.3.6,<1.0',
-    'tensorflow~=1.2'
+    'tensorflow~=1.2'  # need to update for python 3.7
 ]
 
 setup_requirements = [

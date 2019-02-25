@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """This module contains feature extractors for entities"""
-from __future__ import absolute_import, unicode_literals
-
-from .helpers import GAZETTEER_RSC, register_features, get_ngram, requires
+from .helpers import GAZETTEER_RSC, register_entity_feature, get_ngram, requires
 
 
+@register_entity_feature(feature_name='in-gaz')
 @requires(GAZETTEER_RSC)
-def extract_in_gaz_features():
-    def extractor(example, resources):
+def extract_in_gaz_features(**args):
+    def _extractor(example, resources):
         _, entities, entity_index = example
         features = {}
         current_entity = entities[entity_index]
@@ -21,10 +20,11 @@ def extract_in_gaz_features():
 
         return features
 
-    return extractor
+    return _extractor
 
 
-def extract_bag_of_words_before_features(ngram_lengths_to_start_positions):
+@register_entity_feature(feature_name='bag-of-words-before')
+def extract_bag_of_words_before_features(ngram_lengths_to_start_positions, **args):
     """Returns a bag-of-words feature extractor.
 
     Args:
@@ -33,7 +33,7 @@ def extract_bag_of_words_before_features(ngram_lengths_to_start_positions):
     Returns:
         (function) The feature extractor.
     """
-    def extractor(example, resources):
+    def _extractor(example, resources):
         query, entities, entity_index = example
         features = {}
         tokens = query.normalized_tokens
@@ -47,10 +47,11 @@ def extract_bag_of_words_before_features(ngram_lengths_to_start_positions):
 
         return features
 
-    return extractor
+    return _extractor
 
 
-def extract_bag_of_words_after_features(ngram_lengths_to_start_positions):
+@register_entity_feature(feature_name='bag-of-words-after')
+def extract_bag_of_words_after_features(ngram_lengths_to_start_positions, **args):
     """Returns a bag-of-words feature extractor.
 
     Args:
@@ -59,7 +60,7 @@ def extract_bag_of_words_after_features(ngram_lengths_to_start_positions):
     Returns:
         (function) The feature extractor.
     """
-    def extractor(example, resources):
+    def _extractor(example, resources):
         query, entities, entity_index = example
         features = {}
         tokens = query.normalized_tokens
@@ -73,11 +74,12 @@ def extract_bag_of_words_after_features(ngram_lengths_to_start_positions):
 
         return features
 
-    return extractor
+    return _extractor
 
 
-def extract_numeric_candidate_features():
-    def extractor(example, resources):
+@register_entity_feature(feature_name='numeric')
+def extract_numeric_candidate_features(**args):
+    def _extractor(example, resources):
         query, _, _ = example
         feat_seq = [{}] * len(query.normalized_tokens)
         sys_entities = query.get_system_entity_candidates(['time', 'interval'])
@@ -87,11 +89,12 @@ def extract_numeric_candidate_features():
                 feat_seq[i][feat_name] = 1
         return feat_seq
 
-    return extractor
+    return _extractor
 
 
-def extract_other_entities_features():
-    def extractor(example, resources):
+@register_entity_feature(feature_name='other-entities')
+def extract_other_entities_features(**args):
+    def _extractor(example, resources):
         _, entities, entity_index = example
         features = {}
         for idx, entity in enumerate(entities):
@@ -102,12 +105,4 @@ def extract_other_entities_features():
 
         return features
 
-    return extractor
-
-
-register_features('entity', {
-    'bag-of-words-before': extract_bag_of_words_before_features,
-    'bag-of-words-after': extract_bag_of_words_after_features,
-    'in-gaz': extract_in_gaz_features,
-    'other-entities': extract_other_entities_features
-})
+    return _extractor

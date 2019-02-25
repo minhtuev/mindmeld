@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, unicode_literals
-
+try:
+    # register test module for assertion rewrite
+    import pytest
+    pytest.register_assert_rewrite('mmworkbench.test')
+except ImportError:
+    pass  # no worries
 
 from .app import Application
 from .components import (Conversation, DialogueResponder,
@@ -11,6 +15,6 @@ from ._version import current
 __all__ = ['blueprint', 'configure_logs', 'Application', 'Conversation', 'DialogueResponder',
            'NaturalLanguageProcessor', 'QuestionAnswerer']
 
-__author__ = 'MindMeld, Inc.'
-__email__ = 'contact@mindmeld.com'
+__author__ = 'Cisco, Inc.'
+__email__ = 'ktick@cisco.com'
 __version__ = current

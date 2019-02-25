@@ -2,9 +2,6 @@
 """
 This module contains the domain classifier component of the Workbench natural language processor.
 """
-from __future__ import absolute_import, unicode_literals
-from builtins import super
-
 import logging
 
 from ..markup import mark_down
@@ -75,8 +72,9 @@ class DomainClassifier(Classifier):
         logger.info('Loading domain classifier')
         super().load(*args, **kwargs)
 
-    def inspect(self, query, domain=None):
-        return self._model.inspect(example=query, gold_label=domain)
+    def inspect(self, query, domain=None, dynamic_resource=None):
+        return self._model.inspect(
+            example=query, gold_label=domain, dynamic_resource=dynamic_resource)
 
     def _get_query_tree(self, queries=None, label_set=DEFAULT_TRAIN_SET_REGEX, raw=False):
         """Returns the set of queries to train on
@@ -118,7 +116,7 @@ class DomainClassifier(Classifier):
         for domain in query_tree:
             for intent in query_tree[domain]:
                 for query_text in query_tree[domain][intent]:
-                    queries.append("{}###{}".format(domain, mark_down(query_text)))
+                    queries.append(domain + "###" + mark_down(query_text))
 
         queries.sort()
         return self._resource_loader.hash_list(queries)

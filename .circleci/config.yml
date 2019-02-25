@@ -27,6 +27,13 @@ definitions:
 
   images:
 
+    duckling-image: &duckling-image
+      image: mindmeldworkbench/duckling:master
+      auth:
+        username: $DOCKERHUB_USERNAME
+        password: $DOCKERHUB_PASSWORD
+      command: stack exec duckling-example-exe
+
     es-image: &es-image
         image: docker.elastic.co/elasticsearch/elasticsearch:5.6.10
         environment:
@@ -70,12 +77,6 @@ definitions:
             sudo apt-get update
             sudo apt-get install openjdk-8-jre
 
-      - run:
-          name: Start numerical parser
-          background: true
-          command: |
-            java -jar mmworkbench/resources/mindmeld-mallard.jar
-
       - restore_cache:
           key: v1-py-cache-{{ .Environment.PYTHON_VERSION }}-{{ checksum "test-requirements.txt" }}-{{ checksum "setup.py" }}
 
@@ -103,7 +104,7 @@ definitions:
           when: always
           command: |
             dockerize -wait tcp://localhost:9200 -timeout 1m
-            dockerize -wait tcp://localhost:2626 -timeout 1m
+            dockerize -wait tcp://localhost:8000 -timeout 1m
 
       - run:
           name: Run python tests
@@ -113,6 +114,11 @@ definitions:
             # run tests
             mkdir ~/test-reports
             pytest --junitxml=~/test-reports/junit.xml
+      - run:
+          name: Food ordering blueprint kb setup
+          # run this even when linting fails
+          when: always
+          command: python -c "from mmworkbench._util import Blueprint; Blueprint.setup_kb(name='food_ordering', app_path='./food_ordering')"
 
       - store_test_results:
           path: ~/test-reports
@@ -140,6 +146,7 @@ jobs:
           PYTHON_VERSION: "3.6.6"
           _JAVA_OPTIONS: "-Xms512m -Xmx1024m"
       - *es-image
+      - *duckling-image
     steps: *test-steps
 
   test-py3.5:
@@ -149,6 +156,7 @@ jobs:
           PYTHON_VERSION: "3.5.5"
           _JAVA_OPTIONS: "-Xms512m -Xmx1024m"
       - *es-image
+      - *duckling-image
     steps: *test-steps
 
   deploy-blueprint:

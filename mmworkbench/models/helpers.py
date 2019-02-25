@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """This module contains some helper functions for the models package"""
-from __future__ import unicode_literals
 from sklearn.metrics import make_scorer
 
 import re
+
+from ..gazetteer import Gazetteer
+from ..tokenizer import Tokenizer
 
 FEATURE_MAP = {}
 MODEL_MAP = {}
@@ -22,10 +24,14 @@ ENTITIES_LABEL_TYPE = 'entities'
 GAZETTEER_RSC = 'gazetteers'
 QUERY_FREQ_RSC = 'q_freq'
 SYS_TYPES_RSC = 'sys_types'
+ENABLE_STEMMING = 'enable-stemming'
 WORD_FREQ_RSC = 'w_freq'
 WORD_NGRAM_FREQ_RSC = 'w_ngram_freq'
 CHAR_NGRAM_FREQ_RSC = 'c_ngram_freq'
 OUT_OF_BOUNDS_TOKEN = '<$>'
+DEFAULT_SYS_ENTITIES = ['sys_time', 'sys_temperature', 'sys_volume', 'sys_amount-of-money',
+                        'sys_email', 'sys_url', 'sys_number', 'sys_ordinal', 'sys_duration',
+                        'sys_phone-number']
 
 
 def create_model(config):
@@ -85,22 +91,35 @@ def register_model(model_type, model_class):
     MODEL_MAP[model_type] = model_class
 
 
-def register_features(example_type, features):
-    """Register a set of feature extractors for use with
-    `get_feature_extractor()`
+def register_query_feature(feature_name):
+    return register_feature(QUERY_EXAMPLE_TYPE, feature_name=feature_name)
 
-    Args:
-        example_type (str): The example type of the feature extractors
-        features (dict): Features extractor templates keyed by name
 
-    Raises:
-        ValueError: If the example type is already registered
+def register_entity_feature(feature_name):
+    return register_feature(ENTITY_EXAMPLE_TYPE, feature_name=feature_name)
+
+
+def register_feature(feature_type, feature_name):
     """
-    if example_type in FEATURE_MAP:
-        msg = 'Features for example type {!r} are already registered.'.format(example_type)
-        raise ValueError(msg)
+    Decorator for adding feature extractor mappings to FEATURE_MAP
+    Args:
+        feature_type: 'query' or 'entity'
+        feature_name: The name of the feature, used in config.py
+    Returns:
+        (func): the feature extractor
+    """
+    def add_feature(func):
+        if feature_type not in {QUERY_EXAMPLE_TYPE, ENTITY_EXAMPLE_TYPE}:
+            raise TypeError("Feature type can only be 'query' or 'entity'")
 
-    FEATURE_MAP[example_type] = features
+        # Add func to feature map with given type and name
+        if feature_type in FEATURE_MAP:
+            FEATURE_MAP[feature_type][feature_name] = func
+        else:
+            FEATURE_MAP[feature_type] = {feature_name: func}
+        return func
+
+    return add_feature
 
 
 def register_label(label_type, label_encoder):
@@ -220,6 +239,67 @@ def entity_seqs_equal(expected, predicted):
         if expected_entity.text != predicted_entity.text:
             return False
     return True
+
+
+def merge_gazetteer_resource(resource, dynamic_resource, tokenizer):
+    """
+    Returns a new resource that is a merge between the original resource and the dynamic
+    resource passed in for only the gazetteer values
+
+    Args:
+        resource (dict): The original resource built from the app
+        dynamic_resource (dict): The dynamic resource passed in
+        tokenizer (Tokenizer): This component is used to normalize entities in dyn gaz
+
+    Returns:
+        dict: The merged resource
+    """
+    return_obj = {}
+    for key in resource:
+        # Pass by reference if not a gazetteer key
+        if key != GAZETTEER_RSC:
+            return_obj[key] = resource[key]
+            continue
+
+        # Create a dict from scratch if we match the gazetteer key
+        return_obj[key] = {}
+        for entity_type in resource[key]:
+            # If the entity type is in the dyn gaz, we merge the data. Else,
+            # just pass by reference the original resource data
+            if entity_type in dynamic_resource[key]:
+                new_gaz = Gazetteer(entity_type)
+                # We deep copy here since shallow copying will also change the
+                # original resource's data during the '_update_entity' op.
+                new_gaz.from_dict(resource[key][entity_type])
+
+                for entity in dynamic_resource[key][entity_type]:
+                    new_gaz._update_entity(
+                        tokenizer.normalize(entity),
+                        dynamic_resource[key][entity_type][entity])
+
+                # The new gaz created is a deep copied version of the merged gaz data
+                return_obj[key][entity_type] = new_gaz.to_dict()
+            else:
+                return_obj[key][entity_type] = resource[key][entity_type]
+    return return_obj
+
+
+def ingest_dynamic_gazetteer(resource, dynamic_resource=None, tokenizer=None):
+    """Ingests dynamic gazetteers from the app and adds them to the resource
+
+    Args:
+        resource (dict): The original resource
+        dynamic_resource (dict, optional): The dynamic resource that needs to be ingested
+        tokenizer (Tokenizer): This used to normalize the entities in the dynamic resource
+
+    Returns:
+        (dict): A new resource with the ingested dynamic resource
+    """
+    if not dynamic_resource or GAZETTEER_RSC not in dynamic_resource:
+        return resource
+    tokenizer = tokenizer or Tokenizer()
+    workspace_resource = merge_gazetteer_resource(resource, dynamic_resource, tokenizer)
+    return workspace_resource
 
 
 def requires(resource):

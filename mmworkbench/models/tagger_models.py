@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 """This module contains the Memm entity recognizer."""
-from __future__ import print_function, absolute_import, unicode_literals, division
-from builtins import range, super
-
 import logging
 import random
 from sklearn.externals import joblib
+from sklearn.exceptions import NotFittedError
 import os
 
 from .helpers import (register_model, get_label_encoder, get_seq_accuracy_scorer,
-                      get_seq_tag_accuracy_scorer)
+                      get_seq_tag_accuracy_scorer, ingest_dynamic_gazetteer)
 from .model import EvaluatedExample, ModelConfig, EntityModelEvaluation, Model
 from .taggers.crf import ConditionalRandomFields
 from .taggers.memm import MemmModel
 from .taggers.lstm import LstmModel
 from ..exceptions import WorkbenchError
+from ..tokenizer import Tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +84,7 @@ class TaggerModel(Model):
         self._clf.setup_model(self.config)
 
         self._no_entities = False
+        self.types = None
 
     def __getstate__(self):
         """Returns the information needed to pickle an instance of this class.
@@ -155,6 +155,12 @@ class TaggerModel(Model):
 
         return self
 
+    def view_extracted_features(self, query, dynamic_resource=None):
+        tokenizer = Tokenizer()
+        workspace_resource = ingest_dynamic_gazetteer(
+            self._resources, dynamic_resource=dynamic_resource, tokenizer=tokenizer)
+        return self._clf.extract_example_features(query, self.config, workspace_resource)
+
     def _fit(self, X, y, params):
         """Trains a classifier without cross-validation.
 
@@ -180,23 +186,72 @@ class TaggerModel(Model):
         # todo should we do any parameter transformation for sequence models?
         return param_grid
 
-    def predict(self, examples):
+    def predict(self, examples, dynamic_resource=None):
         """
         Args:
             examples (list of mmworkbench.core.Query): a list of queries to train on
+            dynamic_resource (dict, optional): A dynamic resource to aid NLP inference
 
         Returns:
             (list of tuples of mmworkbench.core.QueryEntity): a list of predicted labels
         """
         if self._no_entities:
             return [()]
-        # Process the data to generate features and predict the tags
-        predicted_tags = self._clf.extract_and_predict(examples, self.config, self._resources)
 
+        tokenizer = Tokenizer()
+        workspace_resource = ingest_dynamic_gazetteer(
+            self._resources, dynamic_resource=dynamic_resource, tokenizer=tokenizer)
+        # TODO: The try catch block is a hack for the LSTM. Basically, the LSTM model doesn't know
+        # about presence or absence of entities in an intent
+        try:
+            # Process the data to generate features and predict the tags
+            predicted_tags = self._clf.extract_and_predict(examples, self.config,
+                                                           workspace_resource)
+        except NotFittedError:
+            logger.info("Probably don't have entities for intent but still trying to predict")
+            return [()]
         # Decode the tags to labels
         labels = [self._label_encoder.decode([example_predicted_tags], examples=[example])[0]
                   for example_predicted_tags, example in zip(predicted_tags, examples)]
         return labels
+
+    def predict_proba(self, examples, dynamic_resource=None):
+        """
+        Args:
+            examples (list of mmworkbench.core.Query): a list of queries to train on
+            dynamic_resource (dict, optional): A dynamic resource to aid NLP inference
+
+        Returns:
+            list of tuples of (mmworkbench.core.QueryEntity): a list of predicted labels
+            with confidence scores
+        """
+        if self._no_entities:
+            return []
+
+        tokenizer = Tokenizer()
+        workspace_resource = ingest_dynamic_gazetteer(
+            self._resources, dynamic_resource=dynamic_resource, tokenizer=tokenizer)
+
+        # TODO: The try catch block is a hack for the LSTM. Basically, the LSTM model doesn't know
+        # about presence or absence of entities in an intent
+        try:
+            predicted_tags_probas = self._clf.predict_proba(examples, self.config,
+                                                            workspace_resource)
+        except NotFittedError:
+            logger.info("Probably don't have entities for intent but still trying to predict")
+            return []
+
+        tags, probas = zip(*predicted_tags_probas[0])
+        entity_confidence = []
+        entities = self._label_encoder.decode([tags], examples=[examples[0]])[0]
+        for entity in entities:
+            entity_proba = probas[entity.normalized_token_span.start:
+                                  entity.normalized_token_span.end+1]
+            # We assume that the score of the least likely tag in the sequence as the confidence
+            # score of the entire entity sequence
+            entity_confidence.append(min(entity_proba))
+        predicted_labels_scores = tuple(zip(entities, entity_confidence))
+        return predicted_labels_scores
 
     def _get_cv_scorer(self, selection_settings):
         """

@@ -3,16 +3,13 @@
 This module contains all code required to perform multinomial classification
 of text.
 """
-from __future__ import absolute_import, division, unicode_literals
-
 import logging
+import operator
 import random
-from builtins import range, super, zip
 
 import numpy as np
 import pandas as pd
 from numpy import bincount
-from past.utils import old_div
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_selection import SelectFromModel, SelectPercentile
@@ -20,11 +17,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder as SKLabelEncoder, MaxAbsScaler, StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
-import operator
 
 from .helpers import (QUERY_FREQ_RSC, WORD_FREQ_RSC, WORD_NGRAM_FREQ_RSC,
                       CHAR_NGRAM_FREQ_RSC, register_model)
 from .model import EvaluatedExample, Model, StandardModelEvaluation
+from ..tokenizer import Tokenizer
 
 _NEG_INF = -1e10
 
@@ -176,18 +173,18 @@ class TextModel(Model):
         model_class = self._get_model_constructor()
         return model_class(**params).fit(X, y)
 
-    def predict(self, examples):
-        X, _, _ = self.get_feature_matrix(examples)
+    def predict(self, examples, dynamic_resource=None):
+        X, _, _ = self.get_feature_matrix(examples, dynamic_resource=dynamic_resource)
         y = self._clf.predict(X)
         predictions = self._class_encoder.inverse_transform(y)
         return self._label_encoder.decode(predictions)
 
-    def predict_proba(self, examples):
-        X, _, _ = self.get_feature_matrix(examples)
+    def predict_proba(self, examples, dynamic_resource=None):
+        X, _, _ = self.get_feature_matrix(examples, dynamic_resource=dynamic_resource)
         return self._predict_proba(X, self._clf.predict_proba)
 
-    def predict_log_proba(self, examples):
-        X, _, _ = self.get_feature_matrix(examples)
+    def predict_log_proba(self, examples, dynamic_resource=None):
+        X, _, _ = self.get_feature_matrix(examples, dynamic_resource=dynamic_resource)
         predictions = self._predict_proba(X, self._clf.predict_log_proba)
 
         # JSON can't reliably encode infinity, so replace it with large number
@@ -197,6 +194,11 @@ class TextModel(Model):
                 if proba == -np.Infinity:
                     probas[label] = _NEG_INF
         return predictions
+
+    def view_extracted_features(self, example, dynamic_resource=None):
+        tokenizer = Tokenizer()
+        return self._extract_features(
+            example, dynamic_resource=dynamic_resource, tokenizer=tokenizer)
 
     def _get_feature_weight(self, feat_name, label_class):
         """ Retrieves the feature weight from the coefficient matrix. If there are only two
@@ -215,7 +217,7 @@ class TextModel(Model):
         else:
             return self._clf.coef_[label_class, self._feat_vectorizer.vocabulary_[feat_name]]
 
-    def inspect(self, example, gold_label=None):
+    def inspect(self, example, gold_label=None, dynamic_resource=None):
         """ This class takes an example and returns a DataFrame for every feature with feature
           name, feature value, feature weight and their product for the predicted label. If gold
           label is passed in, we will also include the feature value and weight for the gold
@@ -224,6 +226,7 @@ class TextModel(Model):
         Args:
             example (Query): The query to be predicted
             gold_label (str): The gold label for this string
+            dynamic_resource (dict, optional): A dynamic resource to aid NLP inference
 
         Returns:
             (DataFrame): The DataFrame that includes every feature, their value, weight and
@@ -240,9 +243,11 @@ class TextModel(Model):
             logger.warning('Unable to decode label `{0}`'.format(gold_label))
             gold_class = None
 
-        pred_label = self.predict([example])[0]
+        pred_label = self.predict([example], dynamic_resource=dynamic_resource)[0]
         pred_class = self._class_encoder.transform([pred_label])
-        features = self._extract_features(example)
+        tokenizer = Tokenizer()
+        features = self._extract_features(
+            example, dynamic_resource=dynamic_resource, tokenizer=tokenizer)
 
         logging.info("Predicted: " + pred_label)
 
@@ -300,7 +305,7 @@ class TextModel(Model):
 
         return predictions
 
-    def get_feature_matrix(self, examples, y=None, fit=False):
+    def get_feature_matrix(self, examples, y=None, fit=False, dynamic_resource=None):
         """Transforms a list of examples into a feature matrix.
 
         Args:
@@ -312,8 +317,9 @@ class TextModel(Model):
         """
         groups = []
         feats = []
+        tokenizer = Tokenizer()
         for idx, example in enumerate(examples):
-            feats.append(self._extract_features(example))
+            feats.append(self._extract_features(example, dynamic_resource, tokenizer))
             groups.append(idx)
 
         X, y = self._preprocess_data(feats, y, fit=fit)
@@ -362,7 +368,7 @@ class TextModel(Model):
             raw_bias = param_grid['class_bias'] if is_grid else [param_grid['class_bias']]
             for class_bias in raw_bias:
                 # these weights are same as sklearn's class_weight='balanced'
-                balanced_w = [old_div(len(y), (float(len(classes)) * c)) for c in class_count]
+                balanced_w = [(len(y) / len(classes) / c) for c in class_count]
                 balanced_tuples = list(zip(list(range(len(classes))), balanced_w))
 
                 weights.append({c: (1 - class_bias) + class_bias * w for c, w in balanced_tuples})

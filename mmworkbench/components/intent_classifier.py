@@ -1,9 +1,6 @@
 """
 This module contains the intent classifier component of the Workbench natural language processor.
 """
-from __future__ import absolute_import, unicode_literals
-from builtins import super
-
 import logging
 
 from ..markup import mark_down
@@ -87,8 +84,9 @@ class IntentClassifier(Classifier):
         logger.info('Loading intent classifier: domain=%r', self.domain)
         super().load(*args, **kwargs)
 
-    def inspect(self, query, intent=None):
-        return self._model.inspect(example=query, gold_label=intent)
+    def inspect(self, query, intent=None, dynamic_resource=None):
+        return self._model.inspect(
+            example=query, gold_label=intent, dynamic_resource=dynamic_resource)
 
     def _get_query_tree(self, queries=None, label_set=DEFAULT_TRAIN_SET_REGEX, raw=False):
         """Returns the set of queries to train on
@@ -131,7 +129,7 @@ class IntentClassifier(Classifier):
 
         for intent in query_tree.get(self.domain, []):
             for query_text in query_tree[self.domain][intent]:
-                queries.append("{}###{}".format(intent, mark_down(query_text)))
+                queries.append(self.domain + '###' + intent + '###' + mark_down(query_text))
 
         queries.sort()
         return self._resource_loader.hash_list(queries)

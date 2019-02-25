@@ -3,9 +3,6 @@
 These are capabilities that do not have an obvious home within the existing
 project structure.
 """
-from __future__ import unicode_literals, absolute_import
-from builtins import object
-
 import datetime
 from email.utils import parsedate
 import logging
@@ -22,12 +19,13 @@ from . import path
 from .components import QuestionAnswerer
 from .exceptions import AuthNotFoundError, KnowledgeBaseConnectionError
 from .components._config import get_app_namespace
+from .constants import DEVCENTER_URL
 
 
 logger = logging.getLogger(__name__)
 
 CONFIG_FILE_NAME = 'mmworkbench.cfg'
-BLUEPRINT_URL = '{mindmeld_url}/blueprints/{blueprint}/{filename}'
+BLUEPRINT_URL = '{mindmeld_url}/bp/{blueprint}/{filename}'
 
 BLUEPRINT_APP_ARCHIVE = 'app.tar.gz'
 BLUEPRINT_KB_ARCHIVE = 'kb.tar.gz'
@@ -40,7 +38,7 @@ BLUEPRINTS = {
 }
 
 
-class Blueprint(object):
+class Blueprint:
     """This is a callable class used to set up a blueprint app.
 
     The MindMeld website hosts the blueprints in a directory structure like this:
@@ -139,7 +137,7 @@ class Blueprint(object):
         cache_dir = path.get_cached_blueprint_path(name)
         try:
             local_archive = cls._fetch_archive(name, 'kb')
-        except ValueError as ex:
+        except ValueError:
             logger.warning('No knowledge base to set up.')
             return
 
@@ -190,7 +188,7 @@ class Blueprint(object):
         local_archive = os.path.join(cache_dir, filename)
 
         config = load_global_configuration()
-        mindmeld_url = config.get('mindmeld_url', 'https://www.mindmeld.com')
+        mindmeld_url = config.get('mindmeld_url', DEVCENTER_URL)
         token = config.get('token', None)
         if token:
             username = 'token'

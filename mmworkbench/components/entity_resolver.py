@@ -2,9 +2,6 @@
 """
 This module contains the entity resolver component of the Workbench natural language processor.
 """
-from __future__ import absolute_import, unicode_literals
-from builtins import object
-
 import copy
 import logging
 import hashlib
@@ -18,13 +15,13 @@ from ._elasticsearch_helpers import (create_es_client, load_index, get_scoped_in
                                      delete_index, does_index_exist, get_field_names,
                                      INDEX_TYPE_KB, INDEX_TYPE_SYNONYM)
 
-from elasticsearch.exceptions import ConnectionError, TransportError, ElasticsearchException
+from elasticsearch5.exceptions import ConnectionError, TransportError, ElasticsearchException
 from ..exceptions import EntityResolverConnectionError, EntityResolverError
 
 logger = logging.getLogger(__name__)
 
 
-class EntityResolver(object):
+class EntityResolver:
     """An entity resolver is used to resolve entities in a given query to their canonical values
     (usually linked to specific entries in a knowledge base).
     """
@@ -278,6 +275,26 @@ class EntityResolver(object):
                                     "boost": 10 * weight
                                 }
                             }
+                       },
+                       {
+                            "match": {
+                                "cname.char_ngram": {
+                                    "query": entity.text,
+                                    "boost": weight
+                                }
+                            }
+                        }
+                   ]
+
+        def _construct_nbest_match_query(entity, weight=1):
+            return [
+                       {
+                            "match": {
+                                "cname.normalized_keyword": {
+                                    "query": entity.text,
+                                    "boost": weight
+                                }
+                            }
                        }
                    ]
 
@@ -338,7 +355,7 @@ class EntityResolver(object):
                         "match": {
                             "whitelist.double_metaphone": {
                                 "query": entity.text,
-                                "boost": weight
+                                "boost": 3 * weight
                             }
                         }
                    }
@@ -367,8 +384,13 @@ class EntityResolver(object):
         }
 
         match_query = []
+        top_transcript = True
         for e, weight in zip(entity, weight_factors):
-            match_query.extend(_construct_match_query(e, weight))
+            if top_transcript:
+                match_query.extend(_construct_match_query(e, weight))
+                top_transcript = False
+            else:
+                match_query.extend(_construct_nbest_match_query(e, weight))
             if self._use_double_metaphone:
                 match_query.extend(_construct_phonetic_match_query(e, weight))
         text_relevance_query["query"]["function_score"]["query"]["bool"]["should"].append(
@@ -399,6 +421,10 @@ class EntityResolver(object):
 
             results = []
             for hit in hits:
+                if self._use_double_metaphone and len(entity) > 1:
+                    if hit['_score'] < 0.5 * len(entity):
+                        continue
+
                 top_synonym = None
                 synonym_hits = hit['inner_hits']['whitelist']['hits']['hits']
                 if len(synonym_hits) > 0:

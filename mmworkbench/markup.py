@@ -2,9 +2,6 @@
 """The markup module contains functions for interacting with the MindMeld Markup language for
 representing annotations of query text inline.
 """
-from __future__ import absolute_import, unicode_literals
-from future.utils import raise_from
-
 import logging
 
 from .core import Entity, NestedEntity, ProcessedQuery, QueryEntity, Span
@@ -23,6 +20,7 @@ META_SPLIT = '|'
 START_CHARACTERS = frozenset({ENTITY_START, GROUP_START})
 END_CHARACTERS = frozenset({ENTITY_END, GROUP_END})
 SPECIAL_CHARACTERS = frozenset({ENTITY_START, ENTITY_END, GROUP_START, GROUP_END, META_SPLIT})
+TIME_FORMAT = '%Y%m%dT%H%M%S'
 
 
 MINDMELD_FORMAT = 'mindmeld'
@@ -56,7 +54,8 @@ def load_query(markup, query_factory=None, domain=None, intent=None, is_gold=Fal
     return ProcessedQuery(query, domain=domain, intent=intent, entities=entities, is_gold=is_gold)
 
 
-def load_query_file(file_path, query_factory=None, domain=None, intent=None, is_gold=False):
+def load_query_file(file_path, query_factory=None, domain=None, intent=None,
+                    is_gold=False, query_cache=None):
     """Loads the queries from the specified file
 
     Args:
@@ -67,6 +66,7 @@ def load_query_file(file_path, query_factory=None, domain=None, intent=None, is_
         intent (str, optional): The name of the intent annotated for the query.
         is_gold (bool, optional): True if the markup passed in is a reference,
             human-labeled example. Defaults to False.
+        query_cache (QueryCache): A container containing cache query objects
 
     Returns:
         ProcessedQuery: a processed query
@@ -77,7 +77,15 @@ def load_query_file(file_path, query_factory=None, domain=None, intent=None, is_
     for query_text in read_query_file(file_path):
         if query_text[0] == '-':
             continue
-        query = load_query(query_text, query_factory, domain, intent, is_gold=is_gold)
+
+        if query_cache:
+            query = query_cache.get_value(domain, intent, query_text)
+            if not query:
+                query = load_query(query_text, query_factory, domain, intent, is_gold=is_gold)
+                query_cache.set_value(domain, intent, query_text, query)
+        else:
+            query = load_query(query_text, query_factory, domain, intent, is_gold=is_gold)
+
         queries.append(query)
     return queries
 
@@ -123,22 +131,42 @@ def bootstrap_query_file(input_file, output_file, nlp, **kwargs):
     """
     import csv
     import sys
+    show_confidence = kwargs.get("confidence")
     with open(output_file, 'w') if output_file else sys.stdout as csv_file:
         field_names = ["query"]
         if not kwargs.get("no_domain"):
             field_names.append("domain")
+            if show_confidence:
+                field_names.append("domain_conf")
         if not kwargs.get("no_intent"):
             field_names.append("intent")
+            if show_confidence:
+                field_names.append("intent_conf")
+        if show_confidence and not kwargs.get("no_entity"):
+            field_names.append("entity_conf")
+        if show_confidence and not kwargs.get("no_role"):
+            field_names.append("role_conf")
         csv_output = csv.DictWriter(csv_file, field_names, dialect=csv.excel_tab)
+        csv_output.writeheader()
 
         for raw_query in mark_down_file(input_file):
-            processed_query = nlp.process_query(nlp.create_query(raw_query))
-            marked_up_query = dump_query(processed_query, **kwargs)
+            proc_query = nlp.process_query(nlp.create_query(raw_query), verbose=True)
+            marked_up_query = dump_query(proc_query, **kwargs)
             csv_row = {"query": marked_up_query}
             if not kwargs.get("no_domain"):
-                csv_row["domain"] = processed_query.domain
+                csv_row["domain"] = proc_query.domain
+                if show_confidence:
+                    csv_row["domain_conf"] = proc_query.confidence["domains"][proc_query.domain]
             if not kwargs.get("no_intent"):
-                csv_row["intent"] = processed_query.intent
+                csv_row["intent"] = proc_query.intent
+                if show_confidence:
+                    csv_row["intent_conf"] = proc_query.confidence["intents"][proc_query.intent]
+            if show_confidence and not kwargs.get("no_entity"):
+                csv_row["entity_conf"] = min([e.entity.confidence
+                                              for e in proc_query.entities] + [1.0])
+            if show_confidence and not kwargs.get("no_role"):
+                csv_row["role_conf"] = min([e.entity.role.confidence
+                                            for e in proc_query.entities if e.entity.role] + [1.0])
 
             csv_output.writerow(csv_row)
 
@@ -150,10 +178,10 @@ def process_markup(markup, query_factory, query_options):
         entities = _process_annotations(query, annotations)
     except MarkupError as exc:
         msg = 'Invalid markup in query {!r}: {}'
-        raise_from(MarkupError(msg.format(markup, exc)), exc)
+        raise MarkupError(msg.format(markup, exc)) from exc
     except SystemEntityResolutionError as exc:
         msg = "Unable to load query {!r}: {}"
-        raise_from(SystemEntityMarkupError(msg.format(markup, exc)), exc)
+        raise SystemEntityMarkupError(msg.format(markup, exc)) from exc
     return raw_text, query, entities
 
 
@@ -172,12 +200,12 @@ def _process_annotations(query, annotations):
                 head = ann['head']
             except KeyError as exc:
                 msg = 'Group between {} and {} missing head'.format(ann['start'], ann['end'])
-                raise_from(MarkupError(msg), exc)
+                raise MarkupError(msg) from exc
             try:
                 children = ann['children']
             except KeyError as exc:
                 msg = 'Group between {} and {} missing children'.format(ann['start'], ann['end'])
-                raise_from(MarkupError(msg), exc)
+                raise MarkupError(msg) from exc
             entity = head.with_children(children)
             entities.remove(head)
             entities.append(entity)

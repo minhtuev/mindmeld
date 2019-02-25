@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
 """This module contains a collection of the core data structures used in workbench."""
-from __future__ import absolute_import, unicode_literals
-from builtins import object, range, super
-
 import logging
 
 
@@ -12,6 +9,26 @@ TEXT_FORM_NORMALIZED = 2
 TEXT_FORMS = [TEXT_FORM_RAW, TEXT_FORM_PROCESSED, TEXT_FORM_NORMALIZED]
 
 logger = logging.getLogger(__name__)
+
+# The date keys are extracted from here
+# https://github.com/wit-ai/duckling_old/blob/a4bc34e3e945d403a9417df50c1fb2172d56de3e/src/duckling/time/obj.clj#L21 # noqa E722
+TIME_GRAIN_TO_ORDER = {
+    'year': 0,
+    'quarter': 1,
+    'month': 2,
+    'week': 3,
+    'day': 4,
+    'hour': 5,
+    'minute': 6,
+    'second': 7,
+    'milliseconds': 8
+}
+
+
+def sort_by_lowest_time_grain(system_entities):
+    return sorted(
+        system_entities,
+        key=lambda query_entity: TIME_GRAIN_TO_ORDER[query_entity.entity.value['grain']])
 
 
 class Bunch(dict):
@@ -52,7 +69,7 @@ class Bunch(dict):
         pass
 
 
-class Span(object):
+class Span:
     """Simple object representing a span with start and end indices"""
     __slots__ = ['start', 'end']
 
@@ -106,7 +123,7 @@ class Span(object):
         return "{}(start={}, end={})".format(self.__class__.__name__, self.start, self.end)
 
 
-class Query(object):
+class Query:
     """The query object is responsible for processing and normalizing raw user text input so that
     classifiers can deal with it. A query stores three forms of text: raw text, processed text, and
     normalized text. The query object is also responsible for translating text ranges across these
@@ -124,12 +141,13 @@ class Query(object):
         timestamp (long, optional): A unix timestamp used as the reference time.
             If not specified, the current system time is used. If `time_zone`
             is not also specified, this parameter is ignored.
+        stemmed_tokens (list): A sequence of stemmed tokens for the query text
     """
 
     # TODO: look into using __slots__
 
     def __init__(self, raw_text, processed_text, normalized_tokens, char_maps,
-                 language=None, time_zone=None, timestamp=None):
+                 language=None, time_zone=None, timestamp=None, stemmed_tokens=None):
         """Creates a query object
 
         Args:
@@ -148,6 +166,7 @@ class Query(object):
         self._language = language
         self._time_zone = time_zone
         self._timestamp = timestamp
+        self.stemmed_tokens = stemmed_tokens or tuple()
 
     @property
     def text(self):
@@ -163,6 +182,11 @@ class Query(object):
     def normalized_text(self):
         """The normalized input text"""
         return self._texts[TEXT_FORM_NORMALIZED]
+
+    @property
+    def stemmed_text(self):
+        """The stemmed input text"""
+        return ' '.join(self.stemmed_tokens)
 
     @property
     def normalized_tokens(self):
@@ -294,24 +318,28 @@ class Query(object):
         return "<{} {!r}>".format(self.__class__.__name__, self.text)
 
 
-class ProcessedQuery(object):
+class ProcessedQuery:
     """A processed query contains a query and the additional metadata that has been labeled or
     predicted.
 
 
     Attributes:
+        query (Query): The underlying query object.
         domain (str): The domain of the query
         entities (list): A list of entities present in this query
         intent (str): The intent of the query
         is_gold (bool): Indicates whether the details in this query were predicted or human labeled
-        query (Query): The underlying query object.
+        nbest_transcripts_queries (list): A list of n best transcript queries
+        nbest_transcripts_entities (list): A list of lists of entities for each query
+        nbest_aligned_entities (list): A list of lists of aligned entities
+        confidence (dict): A dictionary of the class probas for the domain and intent classifier
     """
 
     # TODO: look into using __slots__
 
     def __init__(self, query, domain=None, intent=None, entities=None, is_gold=False,
                  nbest_transcripts_queries=None, nbest_transcripts_entities=None,
-                 nbest_aligned_entities=None):
+                 nbest_aligned_entities=None, confidence=None):
         self.query = query
         self.domain = domain
         self.intent = intent
@@ -320,6 +348,7 @@ class ProcessedQuery(object):
         self.nbest_transcripts_queries = nbest_transcripts_queries
         self.nbest_transcripts_entities = nbest_transcripts_entities
         self.nbest_aligned_entities = nbest_aligned_entities
+        self.confidence = confidence
 
     def to_dict(self):
         """Converts the processed query into a dictionary"""
@@ -336,8 +365,11 @@ class ProcessedQuery(object):
                                                   for n_entities in self.nbest_transcripts_entities]
         if self.nbest_aligned_entities:
             base['nbest_aligned_entities'] = [[{'text': e.entity.text, 'type': e.entity.type}
-                                              for e in n_entities]
+                                               for e in n_entities]
                                               for n_entities in self.nbest_aligned_entities]
+
+        if self.confidence:
+            base['confidence'] = self.confidence
         return base
 
     def __eq__(self, other):
@@ -356,7 +388,7 @@ class ProcessedQuery(object):
                           len(self.entities), ', gold' if self.is_gold else '')
 
 
-class NestedEntity(object):
+class NestedEntity:
     def __init__(self, texts, spans, token_spans, entity, children=None):
         """Initializes an entity node object
 
@@ -542,7 +574,7 @@ class QueryEntity(NestedEntity):
     """
 
 
-class Entity(object):
+class Entity:
     """An Entity is any important piece of text that provides more information about the user
     intent.
 

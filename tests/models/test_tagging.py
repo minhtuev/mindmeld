@@ -8,8 +8,6 @@ test_tagger
 Tests for `tagger` module.
 """
 # pylint: disable=locally-disabled,redefined-outer-name
-from __future__ import unicode_literals
-
 import pytest
 
 from mmworkbench.models.taggers import taggers
@@ -23,10 +21,7 @@ MINUTE_GRAIN_INDEX = 11
 @pytest.mark.parametrize("query,tags,expected_time", [
     ('set alarm for 1130',
      ['O|', 'O|', 'O|', 'B|sys_time'],
-     ["11:30:00.000-07:00", "23:30:00.000-07:00"]),
-    ('the vikings fought on the year 1130',
-     ['O|', 'O|', 'O|', 'O|', 'O|', 'O|', 'B|sys_time'],
-     ["1130-01-01T00:00:00.000-07:00"]),
+     ["11:30:00.000+00:00", "23:30:00.000+00:00"])
 ])
 def test_get_entities_from_tags_where_tag_idx_in_sys_candidate(kwik_e_mart_nlp,
                                                                query,
@@ -35,14 +30,14 @@ def test_get_entities_from_tags_where_tag_idx_in_sys_candidate(kwik_e_mart_nlp,
     """Tests the behavior when the system entity tag index is
     within the system candidates spans"""
 
-    processed_query = kwik_e_mart_nlp.create_query(query)
+    processed_query = kwik_e_mart_nlp.create_query(query, time_zone='UTC')
+
     res_entity = taggers.get_entities_from_tags(processed_query, tags)
 
     if res_entity[0].to_dict()['value']['grain'] == 'minute':
         assert res_entity[0].to_dict()['value']['value'][MINUTE_GRAIN_INDEX:] in \
                set(expected_time)
-
-    if res_entity[0].to_dict()['value']['grain'] == 'year':
+    else:
         assert res_entity[0].to_dict()['value']['value'] in set(expected_time)
 
 
@@ -198,3 +193,33 @@ def test_get_boundary_counts_sequential(kwik_e_mart_nlp, expected, predicted, ex
     for key in predicted_counts.keys():
         if predicted_counts[key] != expected_counts.get(key, 0):
             assert False
+
+
+def test_view_extracted_features(kwik_e_mart_nlp):
+    config = {
+        'model_type': 'tagger',
+        'model_settings': {
+            'classifier_type': 'memm',
+            'tag_scheme': 'IOB',
+            'feature_scaler': 'max-abs'
+        },
+        'params': {
+            'penalty': 'l2',
+            'C': 10000
+        },
+        'features': {
+            'bag-of-words-seq': {
+                'ngram_lengths_to_start_positions': {
+                    1: [0],
+                }
+            },
+        }
+    }
+    er = kwik_e_mart_nlp.domains["store_info"].intents["get_store_hours"].entity_recognizer
+    er.fit(**config)
+    extracted_features = er.view_extracted_features("Main st store hours")
+    expected_features = [{'bag_of_words|length:1|word_pos:0': 'main'},
+                         {'bag_of_words|length:1|word_pos:0': 'st'},
+                         {'bag_of_words|length:1|word_pos:0': 'store'},
+                         {'bag_of_words|length:1|word_pos:0': 'hours'}]
+    assert extracted_features == expected_features

@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, unicode_literals
-from builtins import object
-
 import codecs
 from collections import defaultdict
 import logging
@@ -12,7 +9,7 @@ from sklearn.externals import joblib
 logger = logging.getLogger(__name__)
 
 
-class Gazetteer(object):
+class Gazetteer:
     """
     This class holds the following  fields, which are extracted and exported to file.
 
@@ -59,6 +56,19 @@ class Gazetteer(object):
             'entities': self.entities,
             'sys_types': self.sys_types
         }
+
+    def from_dict(self, serialized_gaz):
+        """De-serializes gaz object from a dictionary using deep copy ops
+
+        Args:
+            serialized_gaz (dict): The serialized gaz object
+        """
+        for key, value in serialized_gaz.items():
+            # We only shallow copy lists and dicts here since we do not have nested
+            # data structures in this container, only 1-levels dictionaries and lists,
+            # so the references only need to be copies. For all other types, like strings,
+            # they can just be passed by value.
+            setattr(self, key, value.copy() if isinstance(value, (list, dict)) else value)
 
     def dump(self, gaz_path):
         """Persists the gazetteer to disk.
@@ -110,7 +120,11 @@ class Gazetteer(object):
             self.entity_count += 1
 
         if keep_max:
+            old_value = self.pop_dict[entity]
             self.pop_dict[entity] = max(self.pop_dict[entity], popularity)
+            if self.pop_dict[entity] != old_value:
+                logger.debug('Updating gazetteer value of entity {} from {} to {}'.format(
+                    entity, old_value, self.pop_dict[entity]))
         else:
             self.pop_dict[entity] = popularity
 

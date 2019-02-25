@@ -2,7 +2,6 @@
 """
 This module contains the Memm entity recognizer.
 """
-from __future__ import print_function, absolute_import, unicode_literals, division
 from sklearn_crfsuite import CRF
 
 from .taggers import Tagger, extract_sequence_features
@@ -29,8 +28,30 @@ class ConditionalRandomFields(Tagger):
     def get_params(self, deep=True):
         return self._clf.get_params()
 
-    def predict(self, X):
+    def predict(self, X, dynamic_resource=None):
         return self._clf.predict(X)
+
+    def predict_proba(self, examples, config, resources):
+        """
+        Args:
+            examples (list of mmworkbench.core.Query): a list of queries to predict on
+            config (ModelConfig): The ModelConfig which may contain information used for feature
+                                  extraction
+            resources (dict): Resources which may be used for this model's feature extraction
+        Returns:
+            list of tuples of (mmworkbench.core.QueryEntity): a list of predicted labels
+             with confidence scores
+        """
+        X, _, _ = self.extract_features(examples, config, resources)
+        seq = self._clf.predict(X)
+        marginals_dict = self._clf.predict_marginals(X)
+        marginal_tuples = []
+        for query_index, query_seq in enumerate(seq):
+            query_marginal_tuples = []
+            for i, tag in enumerate(query_seq):
+                query_marginal_tuples.append([tag, marginals_dict[query_index][i][tag]])
+            marginal_tuples.append(query_marginal_tuples)
+        return marginal_tuples
 
     def extract_features(self, examples, config, resources, y=None, fit=True):
         """Transforms a list of examples into a feature matrix.
@@ -93,7 +114,7 @@ class ConditionalRandomFields(Tagger):
 # Feature extraction for CRF
 
 
-class FeatureMapper(object):
+class FeatureMapper:
     """
     Mapper for one feature to map numerical values to corresponding bins which are generated
     by the mean and standard deviation of this feature.
@@ -150,7 +171,7 @@ class FeatureMapper(object):
         return np.searchsorted(self._std_bins, value)
 
 
-class FeatureBinner(object):
+class FeatureBinner:
     """
     Class to convert features with numerical values to categorical values.
     """

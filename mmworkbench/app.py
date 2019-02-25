@@ -2,9 +2,6 @@
 """
 This module contains the app component.
 """
-from __future__ import absolute_import, unicode_literals
-from builtins import object
-
 import logging
 import os
 import sys
@@ -12,14 +9,15 @@ import sys
 from .app_manager import ApplicationManager
 from .cli import app_cli
 from .server import WorkbenchServer
-from .components.dialogue import DialogueResponder
+from .components.dialogue import DialogueResponder, DialogueFlow
+from .components.request import Request
 
 logger = logging.getLogger(__name__)
 
 
-class Application(object):
+class Application:
 
-    def __init__(self, import_name, context_class=None, responder_class=None, preprocessor=None,
+    def __init__(self, import_name, request_class=None, responder_class=None, preprocessor=None,
                  async_mode=False):
         self.import_name = import_name
         filename = getattr(sys.modules[import_name], '__file__', None)
@@ -31,7 +29,7 @@ class Application(object):
         self._server = None
         self._dialogue_rules = []
         self._middleware = []
-        self.context_class = context_class or dict
+        self.request_class = request_class or Request
         self.responder_class = responder_class or DialogueResponder
         self.preprocessor = preprocessor
         self.async_mode = async_mode
@@ -45,7 +43,7 @@ class Application(object):
             return
         self.app_manager = ApplicationManager(
             self.app_path, nlp, responder_class=self.responder_class,
-            context_class=self.context_class, preprocessor=self.preprocessor,
+            request_class=self.request_class, preprocessor=self.preprocessor,
             async_mode=self.async_mode)
         self._server = WorkbenchServer(self.app_manager)
 
@@ -119,6 +117,16 @@ class Application(object):
             self.app_manager.add_dialogue_rule(name, handler, **kwargs)
         else:
             self._dialogue_rules.append((name, handler, kwargs))
+
+    def dialogue_flow(self, **kwargs):
+        """Creates a dialogue flow for the application"""
+
+        def _decorator(func):
+            name = kwargs.pop('name', func.__name__)
+            flow = DialogueFlow(name, func, self, **kwargs)
+            return flow
+
+        return _decorator
 
     def cli(self):
         # pylint:

@@ -2,14 +2,13 @@
 """
 This module contains all code required to perform sequence tagging.
 """
-from __future__ import print_function, absolute_import, unicode_literals, division
-from builtins import zip
-
-from ...core import QueryEntity, Span, TEXT_FORM_RAW, TEXT_FORM_NORMALIZED
+from ...core import QueryEntity, Span, TEXT_FORM_RAW, \
+    TEXT_FORM_NORMALIZED, sort_by_lowest_time_grain
 from ...ser import resolve_system_entity, SystemEntityResolutionError
-from ..helpers import get_feature_extractor
+from ..helpers import get_feature_extractor, ENABLE_STEMMING
 
 import logging
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ S_TAG = 'S'
 END_TAG = 'END'
 
 
-class Tagger(object):
+class Tagger:
     """A class for all sequence tagger models implemented in house.
     It is importent to follow this interface exactly when implementing a new model so that your
     model is configured and trained as expected in the Workbench pipeline. Note that this follows
@@ -65,7 +64,7 @@ class Tagger(object):
         """
         raise NotImplementedError
 
-    def predict(self, X):
+    def predict(self, X, dynamic_resource=None):
         """Predicts the labels from a feature matrix X. Again X is the format of what is returned by
         extract_features.
 
@@ -146,6 +145,20 @@ class Tagger(object):
         X, _, _ = self.extract_features(examples, config, resources)
         y = self.predict(X)
         return y
+
+    def predict_proba(self, examples, config, resources):
+        """
+        Args:
+            examples (list of mmworkbench.core.Query): A list of queries to extract features for and
+                                                       predict
+            config (ModelConfig): The ModelConfig which may contain information used for feature
+                                  extraction
+            resources (dict): Resources which may be used for this model's feature extraction
+        Returns:
+            (list of lists): A list of predicted labels (in encoded format) and confidence scores
+        """
+        X, _, _ = self.extract_features(examples, config, resources)
+        return self._predict_proba(X)
 
     def dump(self, model_path, config):
         """
@@ -303,10 +316,10 @@ def get_entities_from_tags(query, tags, scheme='IOB'):
             if _is_system_entity(ent_type):
                 # During predict time, we construct sys_candidates for the input query.
                 # These candidates are "global" sys_candidates, in that the entire query
-                # is sent to Mallard to extract sys_candidates and not just a span range
+                # is sent to Duckling to extract sys_candidates and not just a span range
                 # within the query. However, the tagging model could more restrictive in
                 # its classifier, so a sub-span of the original sys_candidate could be tagged
-                # as a sys_entity. For example, the query "set alarm for 1130", mallard
+                # as a sys_entity. For example, the query "set alarm for 1130", Duckling
                 # provides the following sys_time entity candidate: "for 1130". However,
                 # our entity recognizer only tags the token "1130" as a sys-time entity,
                 # and not "at". Therefore, when we append system entities for this query,
@@ -317,8 +330,11 @@ def get_entities_from_tags(query, tags, scheme='IOB'):
 
                 picked_by_existing_system_entity_candidates = False
 
-                for sys_candidate in query.get_system_entity_candidates(ent_type):
+                sys_entities = query.get_system_entity_candidates(ent_type)
+                if ent_type == 'sys_time':
+                    sys_entities = sort_by_lowest_time_grain(sys_entities)
 
+                for sys_candidate in sys_entities:
                     start_span = sys_candidate.normalized_token_span.start
                     end_span = sys_candidate.normalized_token_span.end
 
@@ -533,11 +549,15 @@ def extract_sequence_features(example, example_type, feature_config, resources):
         (list dict): features
     """
     feat_seq = []
-    for name, kwargs in feature_config.items():
+    workspace_features = copy.deepcopy(feature_config)
+    enable_stemming = workspace_features.pop(ENABLE_STEMMING, False)
+
+    for name, kwargs in workspace_features.items():
         if callable(kwargs):
             # a feature extractor function was passed in directly
             feat_extractor = kwargs
         else:
+            kwargs[ENABLE_STEMMING] = enable_stemming
             feat_extractor = get_feature_extractor(example_type, name)(**kwargs)
 
         update_feat_seq = feat_extractor(example, resources)

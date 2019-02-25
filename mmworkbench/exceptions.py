@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """This module contains exceptions used by the mmworkbench package."""
-from __future__ import absolute_import, unicode_literals
-from builtins import super
-
 try:
     FileNotFoundError
 except NameError:
     FileNotFoundError = IOError
 FileNotFoundError = FileNotFoundError
+
+
+class WorkbenchVersionWarning(UserWarning):
+    pass
 
 
 class WorkbenchError(Exception):

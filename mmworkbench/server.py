@@ -2,8 +2,6 @@
 """
     This module contains the class which serves the workbench API.
 """
-from __future__ import absolute_import, unicode_literals
-
 import logging
 import json
 import os
@@ -16,6 +14,7 @@ from flask_cors import CORS
 
 from ._version import current as __version__
 from .exceptions import BadWorkbenchRequestError
+from .components.dialogue import DialogueResponder
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ class WorkbenchRequest(Request):
         raise BadWorkbenchRequestError("Malformed request body: {0:s}".format(sys.exc_info()[1]))
 
 
-class WorkbenchServer(object):
+class WorkbenchServer:
     """This class sets up a Flask web server."""
 
     def __init__(self, app_manager):
@@ -80,8 +79,8 @@ class WorkbenchServer(object):
             # add request id to response
             # use the passed in id if any
             request_id = request_json.get('request_id', str(uuid.uuid4()))
-            response['request_id'] = request_id
-            return jsonify(response)
+            response.request_id = request_id
+            return jsonify(DialogueResponder.to_json(response))
 
         @server.before_request
         def _before_request(*args, **kwargs):

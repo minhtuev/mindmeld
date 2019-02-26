@@ -30,6 +30,11 @@ from ..markup import process_markup, TIME_FORMAT
 from ..query_factory import QueryFactory
 from ._config import get_nlp_config
 
+import warnings
+
+# ignore sklearn DeprecationWarning, https://github.com/scikit-learn/scikit-learn/issues/10449
+warnings.filterwarnings(action='ignore', category=DeprecationWarning)
+
 SUBPROCESS_WAIT_TIME = 0.5
 default_num_workers = 0
 if sys.version_info > (3, 0):
@@ -338,7 +343,7 @@ class NaturalLanguageProcessor(Processor):
         self._app_path = app_path
         validate_workbench_version(self._app_path)
         self.name = app_path
-
+        self._load_custom_features()
         self.domain_classifier = DomainClassifier(self.resource_loader)
 
         for domain in path.get_domains(self._app_path):
@@ -354,19 +359,19 @@ class NaturalLanguageProcessor(Processor):
                 for intent in nbest_transcripts_nlp_classes[domain].keys():
                     self.domains[domain].intents[intent].nbest_transcripts_enabled = True
 
-    @property
-    def domains(self):
-        """The domains supported by this application"""
-        return self._children
-
-    def _build(self, incremental=False, label_set=None):
-
+    def _load_custom_features(self):
         # Load __init__.py so nlp object recognizes custom features in python console
         try:
             get_app(self._app_path)
         except WorkbenchImportError:
             pass
 
+    @property
+    def domains(self):
+        """The domains supported by this application"""
+        return self._children
+
+    def _build(self, incremental=False, label_set=None):
         if incremental:
             # During an incremental build, we set the incremental_timestamp for caching
             current_ts = datetime.datetime.fromtimestamp(int(time.time())).strftime(TIME_FORMAT)
@@ -980,11 +985,11 @@ class IntentProcessor(Processor):
                                        verbose=False):
         entity = processed_entities[idx]
         # Run the role classification
-        entity = self.entities[entity.entity.type].process_entity(query, processed_entities, idx,
-                                                                  verbose)
+        entity, role_confidence = self.entities[entity.entity.type].process_entity(
+            query, processed_entities, idx, verbose)
         # Run the entity resolution
         entity = self.entities[entity.entity.type].resolve_entity(entity, aligned_entities[idx])
-        return entity
+        return [entity, role_confidence]
 
     def _process_entities(self, query, entities, aligned_entities, verbose=False):
         """
@@ -1004,15 +1009,19 @@ class IntentProcessor(Processor):
             query = query[0]
 
         processed_entities = [deepcopy(e) for e in entities[0]]
-        processed_entities = self._process_list([i for i in range(len(processed_entities))],
-                                                '_classify_and_resolve_entities',
-                                                *[query, processed_entities, aligned_entities,
-                                                  verbose])
-
+        processed_entities_conf = self._process_list([i for i in range(len(processed_entities))],
+                                                     '_classify_and_resolve_entities',
+                                                     *[query, processed_entities, aligned_entities,
+                                                       verbose])
+        if processed_entities_conf:
+            processed_entities, role_confidence = [list(tup)
+                                                   for tup in zip(*processed_entities_conf)]
+        else:
+            role_confidence = []
         # Run the entity parsing
         processed_entities = self.parser.parse_entities(query, processed_entities) \
             if self.parser else processed_entities
-        return processed_entities
+        return processed_entities, role_confidence
 
     def process_query(self, query, return_processed_query=True, dynamic_resource=None,
                       verbose=False):
@@ -1044,22 +1053,28 @@ class IntentProcessor(Processor):
         entities = self._recognize_entities(query, dynamic_resource=dynamic_resource,
                                             verbose=verbose)
         pred_entities = entities[0]
+        entity_confidence = []
         if verbose and len(pred_entities) > 0:
             for entity, score in pred_entities:
-                entity.entity.confidence = score
+                entity_confidence.append({entity.entity.type: score})
             entities, _ = zip(*pred_entities)
             entities = [entities]
 
         aligned_entities = self._align_entities(entities)
-        processed_entities = self._process_entities(query, entities, aligned_entities, verbose)
+        processed_entities, role_confidence = self._process_entities(query, entities,
+                                                                     aligned_entities, verbose)
+
+        confidence = {'entities': entity_confidence, 'roles': role_confidence} if verbose else {}
 
         if using_nbest_transcripts:
             return ProcessedQuery(query[0], entities=processed_entities,
+                                  confidence=confidence,
                                   nbest_transcripts_queries=query,
                                   nbest_transcripts_entities=entities,
                                   nbest_aligned_entities=aligned_entities)
 
-        return ProcessedQuery(query[0], entities=processed_entities)
+        return ProcessedQuery(query[0], entities=processed_entities,
+                              confidence=confidence)
 
 
 class EntityProcessor(Processor):
@@ -1135,28 +1150,27 @@ class EntityProcessor(Processor):
             query (Query): The query the entity originated from
             entities (list): All entities recognized in the query
             entity_index (int): The index of the entity to process
+            verbose (bool): If set to True, returns confidence scores of classes
 
         Returns:
             ProcessedQuery: A processed query object that contains the prediction results from
                 applying the hierarchy of natural language processing models to the input entity
+            confidence_score: confidence scores returned by classifier
         """
         self._check_ready()
         entity = entities[entity_index]
+        confidence_score = None
 
         if self.role_classifier.roles:
             # Only run role classifier if there are roles!
             if verbose:
                 role = self.role_classifier.predict_proba(query, entities, entity_index)
-                entity.entity.role = {
-                   'type': role[0][0],
-                   'confidence': dict(role)
-                }
+                entity.entity.role = role[0][0]
+                confidence_score = dict(role)
             else:
-                entity.entity.role = {
-                    'type': self.role_classifier.predict(query, entities, entity_index)
-                }
+                entity.entity.role = self.role_classifier.predict(query, entities, entity_index)
 
-        return entity
+        return entity, confidence_score
 
     def resolve_entity(self, entity, aligned_entity_spans=None):
         """Does the resolution of a single entity. If aligned_entity_spans is not None,

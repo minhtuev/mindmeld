@@ -7,6 +7,7 @@ import math
 import copy
 
 import numpy as np
+from inspect import signature
 from sklearn.model_selection import (KFold, GroupShuffleSplit, GroupKFold, GridSearchCV,
                                      ShuffleSplit, StratifiedKFold, StratifiedShuffleSplit)
 
@@ -752,9 +753,33 @@ class Model:
         """
         raise NotImplementedError
 
+    @staticmethod
+    def _clean_params(model_class, params):
+        """
+        Make sure that the params to be passed into model construction meet the model's expected
+        params
+        """
+        expected_params = signature(model_class).parameters.keys()
+        if len(expected_params) == 1 and 'parameters' in expected_params:
+            # if there is only one key, this is our custom TaggerModel which is supposed to be a
+            # pass-through and pass everything to the actual sklearn model
+            return params
+        result = copy.deepcopy(params)
+        for param in params:
+            if param not in expected_params:
+                msg = 'Unexpected param `{param}`, dropping it from model config.'.format(
+                    param=param)
+                logger.warning(msg)
+                result.pop(param)
+        return result
+
     def _get_cv_estimator_and_params(self, model_class, param_grid):
-        # Warm start helps speed up cross-validation
-        return model_class(warm_start=True), param_grid
+        param_grid = self._clean_params(model_class, param_grid)
+        if 'warm_start' in signature(model_class).parameters.keys():
+            # Warm start helps speed up cross-validation for some models such as random forest
+            return model_class(warm_start=True), param_grid
+        else:
+            return model_class(), param_grid
 
     def _process_cv_best_params(self, best_params):
         return best_params

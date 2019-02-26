@@ -369,7 +369,7 @@ class ProcessedQuery:
                                               for n_entities in self.nbest_aligned_entities]
 
         if self.confidence:
-            base['confidence'] = self.confidence
+            base['confidences'] = self.confidence
         return base
 
     def __eq__(self, other):
@@ -541,8 +541,8 @@ class NestedEntity:
         return NotImplemented
 
     def __str__(self):
-        return "{}{}{} '{}' {}-{} ".format(
-            self.entity.type, ':' if self.entity.role else '', self.entity.role, self.text,
+        return "{}{} '{}' {}-{}".format(
+            self.entity.type, ':' + self.entity.role if self.entity.role else '', self.text,
             self.span.start, self.span.end
         )
 

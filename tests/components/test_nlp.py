@@ -9,6 +9,7 @@ Tests for NaturalLanguageProcessor module.
 """
 # pylint: disable=locally-disabled,redefined-outer-name
 import pytest
+import math
 
 from mmworkbench.exceptions import ProcessorError, AllowedNlpClassesKeyError
 from mmworkbench.components import NaturalLanguageProcessor
@@ -254,8 +255,8 @@ def test_process_verbose_no_entity(kwik_e_mart_nlp):
     assert response['domain'] == 'store_info'
     assert response['intent'] == 'greet'
     assert response['entities'] == []
-    assert isinstance(response['confidence']['domains']['store_info'], float)
-    assert isinstance(response['confidence']['intents']['greet'], float)
+    assert isinstance(response['confidences']['domains']['store_info'], float)
+    assert isinstance(response['confidences']['intents']['greet'], float)
 
 
 def test_process_verbose(kwik_e_mart_nlp):
@@ -265,9 +266,10 @@ def test_process_verbose(kwik_e_mart_nlp):
     assert response['domain'] == 'store_info'
     assert response['intent'] == 'get_store_hours'
     assert response['entities'][0]['text'] == 'elm street'
-    assert isinstance(response['entities'][0]['confidence'], float)
-    assert isinstance(response['confidence']['domains']['store_info'], float)
-    assert isinstance(response['confidence']['intents']['get_store_hours'], float)
+    assert isinstance(response['confidences']['entities'][0][response['entities'][0]['type']],
+                      float)
+    assert isinstance(response['confidences']['domains']['store_info'], float)
+    assert isinstance(response['confidences']['intents']['get_store_hours'], float)
 
 
 def test_process_verbose_long_tokens(kwik_e_mart_nlp):
@@ -285,7 +287,8 @@ def test_process_verbose_long_tokens(kwik_e_mart_nlp):
     assert response['domain'] == 'store_info'
     assert response['intent'] == 'get_store_hours'
     assert response['entities'][0]['text'] == 'tomorrow'
-    assert isinstance(response['entities'][0]['confidence'], float)
+    assert isinstance(response['confidences']['entities'][0][response['entities'][0]['type']],
+                      float)
 
 
 def test_process_verbose_short_tokens(kwik_e_mart_nlp):
@@ -303,7 +306,8 @@ def test_process_verbose_short_tokens(kwik_e_mart_nlp):
     assert response['domain'] == 'store_info'
     assert response['intent'] == 'get_store_hours'
     assert response['entities'][0]['text'] == 'tomorrow'
-    assert isinstance(response['entities'][0]['confidence'], float)
+    assert isinstance(response['confidences']['entities'][0][response['entities'][0]['type']],
+                      float)
 
 
 test_nbest = [
@@ -320,10 +324,10 @@ test_nbest = [
 def test_nbest_process_verbose(kwik_e_mart_nlp, queries, expected_domain, expected_intent):
     response = kwik_e_mart_nlp.process(queries, verbose=True)
     response['entities_text'] = [e['text'] for e in response['entities']]
-    for e in response['entities']:
-        assert isinstance(e['confidence'], float)
-    assert isinstance(response['confidence']['domains'][expected_domain], float)
-    assert isinstance(response['confidence']['intents'][expected_intent], float)
+    for i, e in enumerate(response['entities']):
+        assert isinstance(response['confidences']['entities'][i][e['type']], float)
+    assert isinstance(response['confidences']['domains'][expected_domain], float)
+    assert isinstance(response['confidences']['intents'][expected_intent], float)
 
 
 test_data_4 = [
@@ -487,3 +491,44 @@ def test_dynamic_gazetteer_case_sensitiveness(kwik_e_mart_nlp):
         "find me ala bazaar",
         dynamic_resource={'gazetteers': {'store_name': {"aLA bazAAr": 1000.0}}})
     assert response['entities'][0]['text'] == "ala bazaar"
+
+
+def test_word_shape_feature(kwik_e_mart_nlp):
+    ic = kwik_e_mart_nlp.domains['store_info'].intent_classifier
+    features = ic.view_extracted_features("is the 104 first street store open")
+
+    word_shape_features = {}
+    for key in features:
+        if 'word_shape' in key:
+            word_shape_features[key] = features[key]
+
+    shape_1_value = math.log(2, 2)/7
+    expected_features = {
+        'bag_of_words|length:1|word_shape:xx': shape_1_value,
+        'bag_of_words|length:1|word_shape:xxx': shape_1_value,
+        'bag_of_words|length:1|word_shape:xxxx': shape_1_value,
+        'bag_of_words|length:1|word_shape:xxxxx': math.log(3, 2)/7,
+        'bag_of_words|length:1|word_shape:xxxxx+': shape_1_value,
+        'bag_of_words|length:1|word_shape:ddd': shape_1_value
+    }
+
+    assert expected_features == word_shape_features
+
+
+def test_sys_entity_feature(kwik_e_mart_nlp):
+    ic = kwik_e_mart_nlp.domains['store_info'].intent_classifier
+    features = ic.view_extracted_features("is the 104 1st street store open")
+
+    sys_candidate_features = {}
+    for key in features:
+        if 'sys_candidate' in key:
+            sys_candidate_features[key] = features[key]
+
+    expected_features = {
+        'sys_candidate|type:sys_number': 2,
+        'sys_candidate|type:sys_number|granularity:None': 2,
+        'sys_candidate|type:sys_ordinal': 1,
+        'sys_candidate|type:sys_ordinal|granularity:None': 1
+    }
+
+    assert expected_features == sys_candidate_features

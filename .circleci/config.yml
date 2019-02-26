@@ -20,6 +20,7 @@ workflows:
                 - develop
                 - staging
                 - master
+                - release/4.0.0
 
 # Definitions (keep config D.R.Y.)
 
@@ -29,9 +30,6 @@ definitions:
 
     duckling-image: &duckling-image
       image: mindmeldworkbench/duckling:master
-      auth:
-        username: $DOCKERHUB_USERNAME
-        password: $DOCKERHUB_PASSWORD
       command: stack exec duckling-example-exe
 
     es-image: &es-image
@@ -187,4 +185,5 @@ jobs:
 
       - deploy:
           command: |
-            MM_BRANCH=$CIRCLE_BRANCH bash scripts/upload_blueprint.sh -d `pwd`/tests/kwik_e_mart -b kwik_e_mart
+            MM_BRANCH=staging bash scripts/upload_blueprint.sh -d `pwd`/tests/kwik_e_mart -b kwik_e_mart
+            MM_BRANCH=master bash scripts/upload_blueprint.sh -d `pwd`/tests/kwik_e_mart -b kwik_e_mart

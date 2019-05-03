@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""This module contains the Kwik-E-Mart workbench demo application"""
-from mmworkbench import Application
+"""This module contains the Kwik-E-Mart MindMeld demo application"""
+from mindmeld import Application
 from . import custom_features  # noqa: F401
 
 app = Application(__name__)
@@ -15,6 +15,7 @@ def welcome(request, responder):
         prefix = 'Hello, {name}. '
     except KeyError:
         prefix = 'Hello. '
+
     responder.reply(prefix + 'I can help you find store hours '
                              'for your local Kwik-E-Mart. How can I help?')
     responder.listen()

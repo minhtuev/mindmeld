@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""This module contains the specification of the mmworkbench package"""
+"""This module contains the specification of the mindmeld package"""
 # pylint: disable=locally-disabled,invalid-name
 from setuptools import setup
 
-with open('HISTORY.rst') as history_file:
-    history = history_file.read()
+with open('README.md') as readme_file:
+    readme = readme_file.read()
 
 requirements = [
     'attrs~=18.2',
@@ -26,12 +26,12 @@ requirements = [
     'py~=1.4',
     'python-dateutil~=2.6',
     'pytz>=2018.5',
+    'urllib3==1.23',
     'requests~=2.19',
     'scipy>=0.9,<2.0',
     'scikit-learn>=0.18.1,<0.20; python_version < "3.7"',
     'scikit-learn>=0.19.2,<0.20; python_version >= "3.7"',
     'tqdm~=4.15',
-    'urllib3~=1.23',
     'python-crfsuite~=0.9; python_version < "3.7"',
     'python-crfsuite>=0.9.6,<1.0; python_version >= "3.7"',
     'sklearn-crfsuite>=0.3.6,<1.0',
@@ -40,44 +40,49 @@ requirements = [
 ]
 
 setup_requirements = [
-    'pytest-runner~=2.11'
+    'pytest-runner~=2.11',
+    'setuptools>=36'
 ]
 
 test_requirements = [
     'flake8==3.5.0',
     'pylint==1.6.5',
-    'pytest==3.0.5',
+    'pytest==3.8.0',
     'pytest-cov==2.4.0',
     'pytest-asyncio==0.8.0'
 ]
 
 setup(
-    name='mmworkbench',
-    version='4.0.0rc3',
-    description="A Python module for building natural language processing models.",
-    long_description=history,
-    author="MindMeld, Inc.",
+    name='mindmeld',
+    version='4.1.0',
+    description="A Conversational AI platform.",
+    long_description=readme,
+    long_description_content_type='text/markdown',
+    author="Cisco Systems, Inc.",
     author_email='contact@mindmeld.com',
-    url='https://github.com/mindmeld/mindmeld-workbench3',
+    url='https://github.com/cisco/mindmeld',
     packages=[
-        'mmworkbench',
+        'mindmeld',
     ],
-    package_dir={'mmworkbench': 'mmworkbench'},
+    package_dir={'mindmeld': 'mindmeld'},
     entry_points={
-        'console_scripts': ['mmworkbench=mmworkbench.cli:cli']
+        'console_scripts': ['mindmeld=mindmeld.cli:cli']
     },
     include_package_data=True,
     install_requires=requirements,
     zip_safe=False,
-    keywords='mindmeld',
+    keywords=['mindmeld', 'nlp', 'ai', 'conversational'],
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        'Topic :: Software Development :: Libraries :: Application Frameworks',
+        'License :: OSI Approved :: Apache Software License'
     ],
     setup_requires=setup_requirements,
     test_suite='tests',

@@ -1,5 +1,5 @@
 import pytest
-from mmworkbench.components import Conversation
+from mindmeld.components import Conversation
 
 
 def assert_reply(directives, templates, *, start_index=0, slots=None):
@@ -29,7 +29,7 @@ def assert_target_dialogue_state(convo, target_dialogue_state):
 
 @pytest.mark.conversation
 def test_default_handler(async_kwik_e_mart_app, kwik_e_mart_app_path):
-    """Tests that the params are cleared in one trip from app to wb."""
+    """Tests that the params are cleared in one trip from app to mm."""
     convo = Conversation(app=async_kwik_e_mart_app, app_path=kwik_e_mart_app_path, force_sync=True)
     convo.process('When does that open?')
     assert_target_dialogue_state(convo, 'send_store_hours_flow')
@@ -41,7 +41,7 @@ def test_default_handler(async_kwik_e_mart_app, kwik_e_mart_app_path):
 
 @pytest.mark.conversation
 def test_repeated_flow(async_kwik_e_mart_app, kwik_e_mart_app_path):
-    """Tests that the params are cleared in one trip from app to wb."""
+    """Tests that the params are cleared in one trip from app to mm."""
     convo = Conversation(app=async_kwik_e_mart_app, app_path=kwik_e_mart_app_path, force_sync=True)
     convo.process('When does that open?')
     assert_target_dialogue_state(convo, 'send_store_hours_flow')
@@ -56,7 +56,7 @@ def test_repeated_flow(async_kwik_e_mart_app, kwik_e_mart_app_path):
 
 @pytest.mark.conversation
 def test_intent_handler_and_exit_flow(async_kwik_e_mart_app, kwik_e_mart_app_path):
-    """Tests that the params are cleared in one trip from app to wb."""
+    """Tests that the params are cleared in one trip from app to mm."""
     convo = Conversation(app=async_kwik_e_mart_app, app_path=kwik_e_mart_app_path, force_sync=True)
     convo.process('When does that open?')
     assert_target_dialogue_state(convo, 'send_store_hours_flow')
@@ -72,7 +72,7 @@ def assert_dialogue_state(dm, dialogue_state):
     return False
 
 
-def test_dialogue_flow(async_kwik_e_mart_app):
+def test_dialogue_flow_async(async_kwik_e_mart_app):
     @async_kwik_e_mart_app.dialogue_flow(domain='some_domain', intent='some_intent')
     async def some_handler(context, responder):
         pass
@@ -94,6 +94,34 @@ def test_dialogue_flow(async_kwik_e_mart_app):
 
     @some_handler.handle(intent='some_intent_2', exit_flow=True)
     async def some_flow_handler_2(context, responder):
+        pass
+
+    assert len(some_handler.rules) == 2
+    assert 'some_flow_handler_2' in some_handler.exit_flow_states
+
+
+def test_dialogue_flow(kwik_e_mart_app):
+    @kwik_e_mart_app.dialogue_flow(domain='some_domain', intent='some_intent')
+    def some_handler(context, responder):
+        pass
+
+    assert some_handler.flow_state == 'some_handler_flow'
+    assert 'some_handler' in some_handler.all_flows
+
+    dm = some_handler.dialogue_manager
+    assert_dialogue_state(dm, 'some_handler')
+    assert_dialogue_state(dm, 'some_handler_flow')
+
+    assert len(some_handler.rules) == 0
+
+    @some_handler.handle(intent='some_intent')
+    def some_flow_handler(context, responder):
+        pass
+
+    assert len(some_handler.rules) == 1
+
+    @some_handler.handle(intent='some_intent_2', exit_flow=True)
+    def some_flow_handler_2(context, responder):
         pass
 
     assert len(some_handler.rules) == 2

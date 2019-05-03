@@ -14,10 +14,10 @@ import warnings
 
 import pytest
 
-from mmworkbench.components import NaturalLanguageProcessor, Preprocessor
-from mmworkbench.query_factory import QueryFactory
-from mmworkbench.resource_loader import ResourceLoader
-from mmworkbench.tokenizer import Tokenizer
+from mindmeld.components import NaturalLanguageProcessor, Preprocessor
+from mindmeld.query_factory import QueryFactory
+from mindmeld.resource_loader import ResourceLoader
+from mindmeld.tokenizer import Tokenizer
 
 warnings.filterwarnings("module", category=DeprecationWarning,
                         module="sklearn.preprocessing.label")
@@ -26,6 +26,7 @@ warnings.filterwarnings("module", category=DeprecationWarning,
 APP_NAME = 'kwik_e_mart'
 APP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), APP_NAME)
 FOOD_ORDERING_APP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'food_ordering')
+HOME_ASSISTANT_APP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'home_assistant')
 AENEID_FILE = 'aeneid.txt'
 AENEID_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), AENEID_FILE)
 HOME_ASSISTANT_APP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'home_assistant')
@@ -69,6 +70,15 @@ def home_assistant_app_path():
 
 
 @pytest.fixture(scope='session')
+def kwik_e_mart_nlp(kwik_e_mart_app_path):
+    """Provides a built processor instance"""
+    nlp = NaturalLanguageProcessor(app_path=kwik_e_mart_app_path)
+    nlp.build()
+    nlp.dump()
+    return nlp
+
+
+@pytest.fixture
 def home_assistant_nlp(home_assistant_app_path):
     """Provides a built processor instance"""
     nlp = NaturalLanguageProcessor(app_path=home_assistant_app_path)
@@ -78,19 +88,17 @@ def home_assistant_nlp(home_assistant_app_path):
 
 
 @pytest.fixture(scope='session')
-def kwik_e_mart_nlp(kwik_e_mart_app_path):
-    """Provides a built processor instance"""
-    nlp = NaturalLanguageProcessor(app_path=kwik_e_mart_app_path)
-    nlp.build()
-    nlp.dump()
-    return nlp
+def kwik_e_mart_app(kwik_e_mart_nlp):
+    from .kwik_e_mart import app
+    app.lazy_init(kwik_e_mart_nlp)
+    return app
 
 
 @pytest.fixture(scope='session')
 def async_kwik_e_mart_app(kwik_e_mart_nlp):
     from .kwik_e_mart import app_async
     app = app_async.app
-    app.lazy_init()
+    app.lazy_init(kwik_e_mart_nlp)
     loop = asyncio.get_event_loop()
     loop.run_until_complete(app.app_manager.load())
     return app
@@ -140,3 +148,13 @@ def aeneid_path():
 def aeneid_content(aeneid_path):
     with codecs.open(aeneid_path, mode='r', encoding='utf-8') as f:
         return f.read()
+
+
+class FakeApp:
+    def __init__(self, app_path):
+        self.app_path = app_path
+
+
+@pytest.fixture
+def fake_app():
+    return FakeApp('123')

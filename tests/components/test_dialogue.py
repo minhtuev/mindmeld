@@ -12,8 +12,9 @@ These tests apply regardless of async/await support.
 # pylint: disable=locally-disabled,redefined-outer-name
 import pytest
 
-from mmworkbench.components import Conversation, DialogueManager, DialogueResponder
-from mmworkbench.components.request import Request, Params, FrozenParams
+from mindmeld.components import Conversation, DialogueManager, DialogueResponder
+from mindmeld.components.request import Request, Params, FrozenParams
+from mindmeld.components.dialogue import DialogueStateRule
 
 
 def create_request(domain, intent, entities=None):
@@ -46,6 +47,72 @@ def dm():
     dm.add_dialogue_rule('default', lambda x, y: None, default=True)
 
     return dm
+
+
+def test_dialogue_state_rule_equal():
+    rule1 = DialogueStateRule(dialogue_state='some-state', domain='some-domain')
+    rule2 = DialogueStateRule(dialogue_state='some-state', domain='some-domain')
+    assert rule1 == rule2
+
+
+def test_dialogue_state_rule_not_equal():
+    rule1 = DialogueStateRule(dialogue_state='some-state', domain='some-domain')
+    rule2 = DialogueStateRule(dialogue_state='some-state-2', domain='some-domain')
+    assert rule1 != rule2
+
+    rule2 = DialogueStateRule(dialogue_state='some-state')
+    assert rule1 != rule2
+
+    rule2 = DialogueStateRule(dialogue_state='some-state', domain='some-domain',
+                              intent='some-intent')
+    assert rule1 != rule2
+
+
+def test_dialogue_state_rule_unexpected_keyword():
+    with pytest.raises(TypeError) as ex:
+        DialogueStateRule(dialogue_state='some-state', domain='some-domain', new_key='some-key')
+
+    assert "DialogueStateRule() got an unexpected keyword argument 'new_key'" in str(ex)
+
+
+def test_dialogue_state_rule_targeted_only():
+    request = create_request('some-domain', 'some-intent')
+    rule1 = DialogueStateRule(dialogue_state='some-state', targeted_only=True)
+    assert not rule1.apply(request)
+
+    with pytest.raises(ValueError) as ex:
+        DialogueStateRule(dialogue_state='some-state', domain='some-domain', targeted_only=True)
+
+    msg = "For a dialogue state rule, if targeted_only is True, domain, intent, and has_entity" \
+          " must be omitted"
+
+    assert msg in str(ex)
+
+
+def test_dialogue_state_rule_exception():
+    with pytest.raises(ValueError):
+        DialogueStateRule(dialogue_state='some-state', has_entities=[1, 2])
+
+    rule1 = DialogueStateRule(dialogue_state='some-state', has_entity="entity_1")
+    assert rule1.entity_types == frozenset(("entity_1",))
+
+    rule2 = DialogueStateRule(dialogue_state='some-state', has_entities=["entity_2", "entity_3"])
+    assert rule2.entity_types == frozenset(("entity_2", "entity_3",))
+
+    with pytest.raises(ValueError):
+        DialogueStateRule(dialogue_state='some-state', has_entity="entity_1",
+                          has_entities=["entity_2", "entity_3"])
+
+    with pytest.raises(NotImplementedError):
+        assert rule1 == 1
+
+    with pytest.raises(NotImplementedError):
+        assert rule1 != 1
+
+    assert repr(rule1) == "<DialogueStateRule 'some-state'>"
+
+    with pytest.raises(NotImplementedError):
+        assert DialogueStateRule.compare(rule1, 1)
 
 
 class TestDialogueManager:
@@ -118,6 +185,13 @@ class TestDialogueManager:
         result = dm.apply_handler(request, response, target_dialogue_state='intent_entity_2')
         assert result.dialogue_state == 'intent_entity_2'
 
+    def test_target_dialogue_state_management_targeted_only(self, dm):
+        """Correctly sets the dialogue state based on the target_dialogue_state"""
+        request = create_request('domain', 'intent')
+        response = create_responder(request)
+        result = dm.apply_handler(request, response, target_dialogue_state='targeted_only')
+        assert result.dialogue_state == 'targeted_only'
+
     def test_targeted_only_kwarg_exclusion(self, dm):
         with pytest.raises(ValueError):
             dm.add_dialogue_rule('targeted_only2', lambda x, y: None,
@@ -167,11 +241,9 @@ class TestDialogueManager:
 
 
 def test_convo_params_are_cleared(kwik_e_mart_nlp, kwik_e_mart_app_path):
-    """Tests that the params are cleared in one trip from app to wb."""
+    """Tests that the params are cleared in one trip from app to mm."""
     convo = Conversation(nlp=kwik_e_mart_nlp, app_path=kwik_e_mart_app_path)
     convo.params = Params(allowed_intents=['store_info.find_nearest_store'],
                           target_dialogue_state='greeting')
     convo.say('close door')
-    assert convo.params == Params(previous_params=FrozenParams(
-        allowed_intents=('store_info.find_nearest_store',), target_dialogue_state='greeting'),
-        target_dialogue_state='send_store_hours_flow')
+    assert convo.params == Params()

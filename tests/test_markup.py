@@ -9,9 +9,9 @@ Tests for `markup` module.
 """
 import pytest
 
-from mmworkbench import markup
+from mindmeld import markup
 
-from mmworkbench.core import Entity, NestedEntity, ProcessedQuery, QueryEntity, Span
+from mindmeld.core import Entity, NestedEntity, ProcessedQuery, QueryEntity, Span
 
 MARKED_UP_STRS = [
     'show me houses under {[600,000|sys_number] dollars|price}',
@@ -561,6 +561,32 @@ def test_dump_group(query_factory):
     assert markup.dump_query(processed_query, no_group=True) == entity_text
     assert markup.dump_query(processed_query, no_entity=True) == group_text
     assert markup.dump_query(processed_query, no_group=True, no_entity=True) == query_text
+
+
+@pytest.mark.dump
+@pytest.mark.group
+def test_dump_group_with_role(query_factory):
+    """Tests dumping a query with an entity group with role type"""
+    query_text = 'a large latte with nonfat milk please'
+    query = query_factory.create_query(query_text)
+
+    size = QueryEntity.from_query(query, Span(2, 6), entity_type='size')
+    option = QueryEntity.from_query(query, Span(19, 29), entity_type='option', role='beverage')
+    product = QueryEntity.from_query(query, Span(8, 12), entity_type='dish-type', role='beverage',
+                                     children=(size, option))
+
+    processed_query = ProcessedQuery(query, entities=[size, product, option])
+    markup_text = "a [{large|size} {latte|dish-type|beverage} with " \
+                  "{nonfat milk|option|beverage}|dish-type] please"
+    entity_text = "a {large|size} {latte|dish-type|beverage} with " \
+                  "{nonfat milk|option|beverage} please"
+    group_text = "a [large latte with nonfat milk|dish-type] please"
+
+    assert markup.dump_query(processed_query) == markup_text
+    assert markup.dump_query(processed_query, no_group=True) == entity_text
+    assert markup.dump_query(processed_query, no_entity=True, no_role=True) == group_text
+    assert markup.dump_query(processed_query,
+                             no_group=True, no_entity=True, no_role=True) == query_text
 
 
 @pytest.mark.dump

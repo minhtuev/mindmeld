@@ -5,7 +5,7 @@
 test_ser
 ----------------------------------
 
-Tests for `ser` module (Duckling)
+Tests for `system_entity_recognizer` module
 """
 import pytest
 import requests

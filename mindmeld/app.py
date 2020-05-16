@@ -173,11 +173,19 @@ class Application:
             app.custom_action(intent='greeting', action='say_greeting')
             app.custom_action(entity='person', action='greet_person')
         """
-        if 'action' not in kwargs:
+        if "action" not in kwargs:
             raise CustomActionException("`action` is a required argument.")
-        self.add_custom_action(kwargs.get("action"), kwargs.get("asynch", False), **kwargs)
+        self.add_custom_action(
+            kwargs.get("action"),
+            kwargs.get("asynch", False),
+            kwargs.get("overwrite", False),
+            kwargs.get("config", None),
+            **kwargs
+        )
 
-    def add_custom_action(self, action, asynch=False, **kwargs):
+    def add_custom_action(
+        self, action, asynch=False, overwrite=False, config=None, **kwargs
+    ):
         """Adds a custom action handler for the dialogue manager.
 
         Whenever the user hits this state, we invoke the custom action instead and returns
@@ -186,10 +194,18 @@ class Application:
         Args:
             action (str): The name of the custom action
             asynch (bool): Whether we should invoke this custom action asynchronously
+            overwrite (bool): Whether we should overwite the Responder with fields from the
+                response, otherwise we will extend the fields (frame, directives) accordingly.
+            config (dict): The custom action config, if different from the application's.
         """
         if not action:
             raise CustomActionException("Argument `action` should not be empty.")
-        custom_action = CustomAction(action, self.custom_action_config)
+
+        config = config or self.custom_action_config
+        if not config:
+            raise CustomActionException("Argument `config` should not be empty.")
+
+        custom_action = CustomAction(action, config, overwite=overwrite)
         state_name = kwargs.pop("name") or "invoke_{}".format(action)
         if asynch:
             self.add_dialogue_rule(state_name, custom_action.invoke_async, **kwargs)

@@ -8,6 +8,9 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+RESPONSE_FIELDS = ['frame', 'directives']
+
+
 class CustomActionException(Exception):
     pass
 
@@ -18,10 +21,11 @@ class CustomAction:
       the directives and frame in the response.
     """
 
-    def __init__(self, name: str = None, config: dict = None):
+    def __init__(self, name: str, config: dict, overwrite: bool = False):
         self._name = name
         self._config = config or {}
         self.url = self._config.get("url")
+        self.overwrite = overwrite
 
     def get_json_payload(self, request, responder):
         request_json = {
@@ -63,16 +67,19 @@ class CustomAction:
             status_code, result_json = self.post(json_data, asynch=asynch)
 
             if status_code == 200:
-                fields = ["frame", "directives"]
-                for field in fields:
+                for field in RESPONSE_FIELDS:
                     if field not in result_json:
                         logger.warning(
                             "`%s` not in the response of custom action %s",
                             field,
                             self._name,
                         )
-                responder.frame.update(result_json.get("frame", {}))
-                responder.directives.extend(result_json.get("directives", []))
+                if self.overwrite:
+                    responder.frame = result_json.get("frame", {})
+                    responder.directives = result_json.get("directives", [])
+                else:
+                    responder.frame.update(result_json.get("frame", {}))
+                    responder.directives.extend(result_json.get("directives", []))
                 return True
             else:
                 logger.error(

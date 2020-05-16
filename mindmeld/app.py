@@ -173,10 +173,9 @@ class Application:
             app.custom_action(intent='greeting', action='say_greeting')
             app.custom_action(entity='person', action='greet_person')
         """
-        action = kwargs.get("action")
-        if not action:
+        if 'action' not in kwargs:
             raise CustomActionException("`action` is a required argument.")
-        self.add_custom_action(action, kwargs.get("asynch", False), **kwargs)
+        self.add_custom_action(kwargs.get("action"), kwargs.get("asynch", False), **kwargs)
 
     def add_custom_action(self, action, asynch=False, **kwargs):
         """Adds a custom action handler for the dialogue manager.
@@ -188,6 +187,8 @@ class Application:
             action (str): The name of the custom action
             asynch (bool): Whether we should invoke this custom action asynchronously
         """
+        if not action:
+            raise CustomActionException("Argument `action` should not be empty.")
         custom_action = CustomAction(action, self.custom_action_config)
         state_name = kwargs.pop("name") or "invoke_{}".format(action)
         if asynch:

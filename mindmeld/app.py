@@ -20,6 +20,7 @@ import sys
 
 from .app_manager import ApplicationManager
 from .cli import app_cli
+from .components.custom_action import CustomAction, CustomActionException
 from .components.dialogue import DialogueFlow, DialogueResponder, AutoEntityFilling
 from .components.request import Request
 from .server import MindMeldServer
@@ -40,6 +41,7 @@ class Application:
                 inherits from the DialogueResponder.
             preprocessor (Preprocessor): The application preprocessor, if any.
             async_mode (bool): ``True`` if the application is async, ``False`` otherwise.
+            custom_action_config (dict): Configuration for custom action server, such as URL.
         """
 
     def __init__(
@@ -49,6 +51,7 @@ class Application:
         responder_class=None,
         preprocessor=None,
         async_mode=False,
+        custom_action_config=None,
     ):
         self.import_name = import_name
         filename = getattr(sys.modules[import_name], "__file__", None)
@@ -64,6 +67,7 @@ class Application:
         self.responder_class = responder_class or DialogueResponder
         self.preprocessor = preprocessor
         self.async_mode = async_mode
+        self.custom_action_config = custom_action_config
 
     @property
     def question_answerer(self):
@@ -160,6 +164,36 @@ class Application:
             self.app_manager.add_dialogue_rule(name, handler, **kwargs)
         else:
             self._dialogue_rules.append((name, handler, kwargs))
+
+    def custom_action(self, **kwargs):
+        """Adds a custom action, similar to `add_custom_action` but allows the ordering
+        of nlp entities to be more flexible.
+
+        Examples:
+            app.custom_action(intent='greeting', action='say_greeting')
+            app.custom_action(entity='person', action='greet_person')
+        """
+        action = kwargs.get("action")
+        if not action:
+            raise CustomActionException("`action` is a required argument.")
+        self.add_custom_action(action, kwargs.get("asynch", False), **kwargs)
+
+    def add_custom_action(self, action, asynch=False, **kwargs):
+        """Adds a custom action handler for the dialogue manager.
+
+        Whenever the user hits this state, we invoke the custom action instead and returns
+            the appropriate responder.
+
+        Args:
+            action (str): The name of the custom action
+            asynch (bool): Whether we should invoke this custom action asynchronously
+        """
+        custom_action = CustomAction(action, self.custom_action_config)
+        state_name = kwargs.pop("name") or "invoke_{}".format(action)
+        if asynch:
+            self.add_dialogue_rule(state_name, custom_action.invoke_async, **kwargs)
+        else:
+            self.add_dialogue_rule(state_name, custom_action.invoke, **kwargs)
 
     def dialogue_flow(self, **kwargs):
         """Creates a dialogue flow for the application"""

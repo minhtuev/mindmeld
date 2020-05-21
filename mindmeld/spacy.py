@@ -1,7 +1,11 @@
 import logging
 import spacy
 
-from .system_entity_recognizer import SystemEntityRecognizer, SystemEntityError
+from .system_entity_recognizer import (
+    DucklingRecognizer,
+    SystemEntityRecognizer,
+    SystemEntityError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -10,22 +14,22 @@ class SpacyRecognizer(SystemEntityRecognizer):
     _instance = None
 
     def __init__(self, model="en_core_web_md"):
-        if not self._instance:
+        if not SpacyRecognizer._instance:
             logger.info("Loading spacy model %s.", model)
             self.nlp = spacy.load(model)
             self.model = model
-            self._instance = self
-        elif model != self._instance.model:
+            SpacyRecognizer._instance = self
+        elif model != SpacyRecognizer._instance.model:
             self.nlp = spacy.load(model)
             self.model = model
-            self._instance = self
+            SpacyRecognizer._instance = self
         else:
             raise SystemEntityError("SpacyRecognizer follows a singleton pattern.")
 
     @staticmethod
-    def get_instance(model):
+    def get_instance():
         if not SpacyRecognizer._instance:
-            SpacyRecognizer(model)
+            SpacyRecognizer()
         return SpacyRecognizer._instance
 
     def parse(
@@ -44,10 +48,22 @@ class SpacyRecognizer(SystemEntityRecognizer):
                 "start": ent.start_char,
                 "end": ent.end_char,
                 "value": {"value": ent.text},
-                "dim": ent.label_,
+                "dim": ent.label_.lower(),
             }
             for ent in doc.ents
         ]
+        duckling = DucklingRecognizer.get_instance()
+        duckling_entities = duckling.get_candidates_for_text(sentence)
+
+        for entity in entities:
+            if entity["dim"] in ["time", "percent", "date", "ordinal", "money"]:
+                for duckling_entity in duckling_entities:
+                    if (
+                        entity["body"] == duckling_entity["body"]
+                        and entity["start"] == duckling_entity["start"]
+                    ):
+                        entity["value"] = duckling_entity["value"]
+                        break
         return entities, 200
 
     def get_candidates_for_text(

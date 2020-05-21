@@ -53,7 +53,7 @@ class SpacyRecognizer(SystemEntityRecognizer):
             for ent in doc.ents
         ]
         duckling = DucklingRecognizer.get_instance()
-        duckling_entities = duckling.get_candidates_for_text(sentence)
+        duckling_entities = duckling.get_candidates_for_text(sentence, language=language, locale=locale)
 
         for entity in entities:
             if entity["dim"] in ["time", "percent", "date", "ordinal", "money"]:

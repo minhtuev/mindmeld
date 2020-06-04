@@ -9,7 +9,7 @@ from .dialogue import DialogueResponder
 logger = logging.getLogger(__name__)
 
 
-RESPONSE_FIELDS = ["frame", "directives"]
+RESPONSE_FIELDS = ["frame", "directives", "params"]
 
 
 class CustomActionException(Exception):
@@ -44,7 +44,7 @@ class CustomAction:
             "action": self._name,
         }
 
-    def invoke(self, request, responder):
+    def invoke(self, request, responder, async_mode=False):
         """Invoke the custom action with Request and Responder and return True if the action is
         executed successfully, False otherwise. Upon successful execution, we update the Frame
         and Directives of the Responder object.
@@ -52,6 +52,7 @@ class CustomAction:
         Args:
             request (Request)
             responder (DialogueResponder)
+            async_mode (bool)
 
         Returns:
             (bool)
@@ -64,7 +65,7 @@ class CustomAction:
         json_data = self.get_json_payload(request, responder)
 
         try:
-            status_code, result_json = self.post(json_data)
+            status_code, result_json = self.post(json_data, async_mode=async_mode)
 
             return self._process_response(status_code, result_json, responder)
         except ConnectionError:
@@ -85,22 +86,7 @@ class CustomAction:
         Returns:
             (bool)
         """
-        if not self.url:
-            raise CustomActionException(
-                "No URL is given for custom action {}.".format(self._name)
-            )
-
-        json_data = self.get_json_payload(request, responder)
-
-        try:
-            status_code, result_json = await self.post_async(json_data)
-
-            return self._process_response(status_code, result_json, responder)
-        except ConnectionError:
-            logger.error(
-                "Connection error trying to reach custom action server %s.", self.url
-            )
-            return False
+        return self.invoke(request, responder, async_mode=True)
 
     def _process_response(self, status_code, result_json, responder):
         if status_code == 200:
@@ -126,21 +112,17 @@ class CustomAction:
             )
             return False
 
-    def post(self, json_data):
-        result = requests.post(url=self.url, json=json_data)
-        if result.status_code == 200:
-            return 200, result.json()
+    async def post(self, json_data, async_mode=False):
+        if async_mode:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.url, json=json_data) as response:
+                    code = response.status
+                    json_result = await response.json() if code == 200 else {}
         else:
-            return result.status_code, {}
-
-    async def post_async(self, json_data):
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.url, json=json_data) as response:
-                if response.status == 200:
-                    json_response = await response.json()
-                    return 200, json_response
-                else:
-                    return response.status, {}
+            result = requests.post(url=self.url, json=json_data)
+            code = result.status_code
+            json_result = result.json() if code == 200 else {}
+        return code, json_result
 
     def __repr__(self):
         return self._name
